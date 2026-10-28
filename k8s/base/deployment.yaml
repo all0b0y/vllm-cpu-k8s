@@ -76,9 +76,11 @@ spec:
             capabilities:
               drop: ["ALL"]
           # Guaranteed QoS with an integer CPU count -> exclusive cores under the static CPU Manager.
+          # Memory budget (measured): weights 2.9 GiB + KV 1.5 GiB + vLLM CPU runtime buffers ~1.7 GiB + 2 more processes ~1.3 GiB
+          # (API server, EngineCore). 7 GiB + KV 2 GiB was OOMKilled; 8 GiB + KV 2 GiB sat at the limit.
           resources:
-            requests: {cpu: "5", memory: 7Gi}
-            limits: {cpu: "5", memory: 7Gi}
+            requests: {cpu: "5", memory: 8Gi}
+            limits: {cpu: "5", memory: 8Gi}
           startupProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 10

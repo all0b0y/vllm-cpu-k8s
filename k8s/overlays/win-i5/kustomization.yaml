@@ -1,5 +1,5 @@
 # Intel i5-13400F (WSL2 VM 16 logical CPUs / 11 GB, minikube node 16 CPU, CPUs 0-1 reserved -> 14 allocatable).
-# vLLM: 10 exclusive cores, 7 GiB.
+# vLLM: 10 exclusive cores, 8 GiB.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: llm
@@ -15,5 +15,5 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/resources
         value:
-          requests: {cpu: "10", memory: 7Gi}
-          limits: {cpu: "10", memory: 7Gi}
+          requests: {cpu: "10", memory: 8Gi}
+          limits: {cpu: "10", memory: 8Gi}

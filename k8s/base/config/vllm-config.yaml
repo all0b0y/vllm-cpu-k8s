@@ -7,7 +7,7 @@ port: 8000
 dtype: bfloat16
 max-model-len: 16384
 # CPU: size the KV cache explicitly (vLLM would otherwise size it from the node, not the pod limit).
-kv-cache-memory-bytes: 2147483648     # 2 GiB ~ 75k tokens for Qwen2.5-1.5B
+kv-cache-memory-bytes: 1610612736     # 1.5 GiB ~ 56k tokens (Qwen2.5-1.5B: 28 KiB/token); worst bench case needs ~17k
 max-num-seqs: 32
 max-num-batched-tokens: 2048
 enable-prefix-caching: true

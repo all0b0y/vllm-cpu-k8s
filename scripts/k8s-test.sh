@@ -40,7 +40,7 @@ spec:
     - name: client
       image: $IMAGE
       imagePullPolicy: IfNotPresent
-      command: $(printf '%s\n' "$@" | python3 -c 'import json,sys; print(json.dumps([l.rstrip("\n") for l in sys.stdin]))')
+      command: $(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@")
       env:
         - {name: BASE_URL, value: "http://vllm.$NS.svc:8000"}
         - {name: API_KEY, valueFrom: {secretKeyRef: {name: $API_SECRET, key: api-key}}}
@@ -73,8 +73,8 @@ t_smoke() {
   CANARY="CANARY-$(openssl rand -hex 8)"
   export CANARY
   echo "$CANARY" > "$OUT/canary.txt"
-  client_pod smoke client python3 /scripts/smoke_client.py | tee "$OUT/smoke.jsonl"
-  ! grep -q '"ok": false' "$OUT/smoke.jsonl"
+  client_pod smoke client /opt/venv/bin/python /scripts/smoke_client.py | tee "$OUT/smoke.jsonl"
+  [[ $(grep -c '"ok": true' "$OUT/smoke.jsonl") -ge 9 ]] && ! grep -q '"ok": false' "$OUT/smoke.jsonl"
 }
 
 t_logs() {
@@ -101,7 +101,7 @@ t_logs() {
 
 t_attacker() {
   # Same image, same namespace, but no role=client label -> NetworkPolicy must drop the connection.
-  client_pod attacker none python3 -c "
+  client_pod attacker none /opt/venv/bin/python -c "
 import json, requests
 for path in ['/health', '/invocations']:
     try:
@@ -110,12 +110,15 @@ for path in ['/health', '/invocations']:
     except requests.RequestException as e:
         print(json.dumps({'check': 'attacker_' + path.strip('/'), 'ok': True, 'blocked': type(e).__name__}))
 " | tee "$OUT/attacker.jsonl"
-  ! grep -q '"ok": false' "$OUT/attacker.jsonl"
+  [[ $(grep -c '"ok": true' "$OUT/attacker.jsonl") -eq 2 ]] && ! grep -q '"ok": false' "$OUT/attacker.jsonl"
 }
 
 t_offline() {
+  # `kubectl apply` does not prune: the egress allow from the normal overlay must be deleted explicitly.
   kubectl apply -k k8s/overlays/mac-m3-offline >/dev/null
+  kubectl -n $NS delete networkpolicy allow-model-fetch-egress --ignore-not-found
   kubectl -n $NS get networkpolicy -o name | tee "$OUT/offline-policies.txt"
+  if grep -q allow-model-fetch-egress "$OUT/offline-policies.txt"; then echo "egress allow still present" >&2; return 1; fi
   local started; started=$(date +%s)
   kubectl -n $NS delete pod -l app=vllm --wait=false >/dev/null
   sleep 5
@@ -131,5 +134,6 @@ case ${1:-all} in
   logs) t_logs ;;
   attacker) t_attacker ;;
   offline) t_offline ;;
+  online) kubectl apply -k "$OVERLAY" ;;   # restore the normal overlay (egress for downloads)
   all) t_smoke && t_logs && t_attacker && t_offline && t_smoke && t_logs ;;
 esac
