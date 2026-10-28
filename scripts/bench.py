@@ -173,7 +173,7 @@ def bench_cmd(sc: dict, tag: str, seed: int) -> list[str]:
     cmd = ["/opt/venv/bin/vllm", "bench", "serve", "--backend", "vllm", "--endpoint", "/v1/completions",
            "--base-url", BASE_URL, "--model", MODEL_NAME, "--tokenizer", MODEL_PATH,
            "--num-prompts", str(sc["n"]), "--max-concurrency", str(sc["conc"]), "--request-rate", "inf",
-           "--ignore-eos", "--temperature", "0", "--seed", str(seed), "--num-warmups", "1",
+           "--ignore-eos", "--temperature", "0", "--seed", str(seed), "--num-warmups", "0",
            "--percentile-metrics", "ttft,tpot,itl,e2el", "--metric-percentiles", "50,90,99",
            "--save-result", "--save-detailed", "--result-dir", "/tmp/bench", "--result-filename", f"{tag}.json",
            "--label", tag, "--disable-tqdm", "--ready-check-timeout-sec", "60"]
@@ -185,6 +185,22 @@ def bench_cmd(sc: dict, tag: str, seed: int) -> list[str]:
         cmd += ["--dataset-name", "random", "--random-input-len", str(sc["in"]),
                 "--random-output-len", str(sc["out"]), "--random-range-ratio", "0"]
     return cmd
+
+
+def phase_seed(rep: int, idx: int) -> int:
+    """Unique per (repeat, scenario): random prompts with the same seed are identical across scenarios, and the
+    prefix cache would then serve the prefill of the next scenario (seen: 81% hit rate, TTFT 66 s -> 4.6 s)."""
+    return rep * 1000 + idx + 1
+
+
+def warmup_cmd(rep: int, idx: int) -> list[str]:
+    """Tiny request with its own seed: warms the HTTP/engine path without caching any prompt of the phase.
+    (`--num-warmups` in vllm bench re-sends the FIRST measured prompt, which then hits the prefix cache.)"""
+    return ["/opt/venv/bin/vllm", "bench", "serve", "--backend", "vllm", "--endpoint", "/v1/completions",
+            "--base-url", BASE_URL, "--model", MODEL_NAME, "--tokenizer", MODEL_PATH, "--dataset-name", "random",
+            "--random-input-len", "16", "--random-output-len", "4", "--random-range-ratio", "0", "--num-prompts", "1",
+            "--seed", str(900000 + phase_seed(rep, idx)), "--num-warmups", "0", "--disable-tqdm",
+            "--ready-check-timeout-sec", "60"]
 
 
 def main() -> int:
@@ -227,10 +243,13 @@ def main() -> int:
         phases.write(json.dumps({"phase": "idle", "start": t0, "end": now()}) + "\n")
         scenarios = [s for s in SCENARIOS[args.tier] if not args.only or s["name"] in args.only]
         for rep in range(1, args.repeats + 1):
-            for sc in scenarios:
+            for idx, sc in enumerate(scenarios):
                 tag = f"{sc['name']}_r{rep}"
+                subprocess.run(["kubectl", "-n", NS, "exec", CLIENT, "--", *warmup_cmd(rep, idx)],
+                               text=True, capture_output=True)
                 start = now()
-                proc = subprocess.run(["kubectl", "-n", NS, "exec", CLIENT, "--", *bench_cmd(sc, tag, seed=rep)],
+                proc = subprocess.run(["kubectl", "-n", NS, "exec", CLIENT, "--",
+                                       *bench_cmd(sc, tag, seed=phase_seed(rep, idx))],
                                       text=True, capture_output=True)
                 end = now()
                 (out / f"{tag}.log").write_text(proc.stdout + proc.stderr)
