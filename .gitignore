@@ -28,3 +28,4 @@ results/raw/
 results/smoke/
 uv.lock
 results/k8s/
+results/scan/
