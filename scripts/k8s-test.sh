@@ -9,6 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 NS=llm
 OVERLAY=${OVERLAY:-k8s/overlays/mac-m3}
+OFFLINE_OVERLAY=${OFFLINE_OVERLAY:-${OVERLAY}-offline}
 IMAGE=${IMAGE:-vllm-cpu-guard:0.31.0}
 OUT=${OUT:-results/k8s}
 mkdir -p "$OUT"
@@ -116,7 +117,7 @@ for path in ['/health', '/invocations']:
 
 t_offline() {
   # `kubectl apply` does not prune: the egress allow from the normal overlay must be deleted explicitly.
-  kubectl apply -k k8s/overlays/mac-m3-offline >/dev/null
+  kubectl apply -k "$OFFLINE_OVERLAY" >/dev/null
   kubectl -n $NS delete networkpolicy allow-model-fetch-egress --ignore-not-found
   kubectl -n $NS get networkpolicy -o name | tee "$OUT/offline-policies.txt"
   if grep -q allow-model-fetch-egress "$OUT/offline-policies.txt"; then echo "egress allow still present" >&2; return 1; fi

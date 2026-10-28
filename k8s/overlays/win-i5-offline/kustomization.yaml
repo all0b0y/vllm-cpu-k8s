@@ -1,0 +1,7 @@
+# Same as win-i5, but every egress except DNS is blocked (proof that restarts are offline).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../win-i5
+components:
+  - ../../components/offline
