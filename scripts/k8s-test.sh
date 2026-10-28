@@ -45,6 +45,7 @@ spec:
         - {name: BASE_URL, value: "http://vllm.$NS.svc:8000"}
         - {name: API_KEY, valueFrom: {secretKeyRef: {name: $API_SECRET, key: api-key}}}
         - {name: CANARY, value: "${CANARY:-none}"}
+        - {name: MODEL_NAME, value: "${MODEL_NAME:-qwen2.5-1.5b-instruct}"}
         - {name: DENY_STATUSES, value: "401,404"}
         - {name: PRINT_ANSWER, value: "1"}
       securityContext:

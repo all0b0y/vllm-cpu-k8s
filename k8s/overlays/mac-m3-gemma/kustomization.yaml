@@ -1,0 +1,17 @@
+# Same deployment, second model: google/gemma-3-1b-it (gated, license accepted by the account that owns the
+# read-only token). Only the model identity changes: ConfigMap values are merged, everything else is the base.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llm
+resources:
+  - ../mac-m3
+configMapGenerator:
+  - name: vllm-env
+    behavior: merge
+    literals:
+      - MODEL_ID=google/gemma-3-1b-it
+      - MODEL_REVISION=dcc83ea841ab6100d6b47a070329e1ba4cf78752
+  - name: vllm-config
+    behavior: replace
+    files:
+      - config.yaml=vllm-config.yaml

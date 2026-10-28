@@ -1,0 +1,13 @@
+# vLLM options for google/gemma-3-1b-it (see k8s/base/config/vllm-config.yaml for the comments).
+model: /models/google--gemma-3-1b-it/dcc83ea841ab6100d6b47a070329e1ba4cf78752
+served-model-name: gemma-3-1b-it
+host: 0.0.0.0
+port: 8000
+dtype: bfloat16
+max-model-len: 16384
+kv-cache-memory-bytes: 1610612736
+max-num-seqs: 32
+max-num-batched-tokens: 2048
+enable-prefix-caching: true
+block-size: 128
+enable-log-requests: true

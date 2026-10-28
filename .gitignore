@@ -19,13 +19,12 @@ __pycache__/
 .ruff_cache/
 
 # --- benchmark raw data (published as a GitHub Release asset instead) ---
-results/raw/
 
 # --- OS ---
 .DS_Store
 
-# --- local smoke-test output (contains generated text) ---
-results/smoke/
 uv.lock
-results/k8s/
-results/scan/
+
+# Raw run output (logs, generated text) stays local; curated summaries are whitelisted explicitly.
+results/*
+!results/summary/
