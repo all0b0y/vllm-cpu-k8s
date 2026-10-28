@@ -1,0 +1,82 @@
+# Default deny for the whole namespace, then explicit allows.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# Only pods labelled role=client (e.g. the benchmark Job) may call the model.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients-to-vllm
+spec:
+  podSelector:
+    matchLabels:
+      app: vllm
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: client
+      ports:
+        - {protocol: TCP, port: http}
+---
+# Clients may reach the model and nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients-egress
+spec:
+  podSelector:
+    matchLabels:
+      role: client
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: vllm
+---
+# HTTPS to the internet (not to cluster/private ranges) for the model-fetch initContainer.
+# NetworkPolicy is per pod, not per container: the serving container is kept offline by
+# HF_HUB_OFFLINE=1 + VLLM_NO_USAGE_STATS=1 (enforced by its entrypoint). The `offline` component
+# deletes this policy to prove that restarts do not need the network at all.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-model-fetch-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: vllm
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10"]
+      ports:
+        - {protocol: TCP, port: 443}

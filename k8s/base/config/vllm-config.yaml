@@ -1,0 +1,16 @@
+# vLLM engine options -> `vllm serve --config /etc/vllm/config.yaml` (keys = CLI flags without "--").
+# Change a value, run `kubectl apply -k ...`: the ConfigMap name hash changes and the pod restarts itself.
+model: /models/Qwen--Qwen2.5-1.5B-Instruct/989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+served-model-name: qwen2.5-1.5b-instruct
+host: 0.0.0.0
+port: 8000
+dtype: bfloat16
+max-model-len: 16384
+# CPU: size the KV cache explicitly (vLLM would otherwise size it from the node, not the pod limit).
+kv-cache-memory-bytes: 2147483648     # 2 GiB ~ 75k tokens for Qwen2.5-1.5B
+max-num-seqs: 32
+max-num-batched-tokens: 2048
+enable-prefix-caching: true
+block-size: 128
+# Allowed: the redaction filter keeps only the fact of the request (id + allowlisted params).
+enable-log-requests: true

@@ -1,0 +1,10 @@
+# Apple M3 (Docker Desktop VM 8 CPU / 11.7 GB, minikube node 8 CPU, CPU 0 reserved -> 7 allocatable,
+# ~1 CPU requested by system pods). vLLM: 5 exclusive cores (4 OpenMP threads + 1 API server), 7 GiB.
+# Shared pool for system pods, Calico, nginx and the benchmark client: 3 cores.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llm
+resources:
+  - ../../base
+components:
+  - ../../components/edge-proxy

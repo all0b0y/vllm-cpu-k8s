@@ -1,0 +1,72 @@
+# Optional edge layer: nginx sidecar in front of vLLM (path allowlist, connection/body limits,
+# unbuffered streaming). vLLM is moved to 127.0.0.1 and becomes unreachable from the network.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+configMapGenerator:
+  # Fixed name: kustomize does not rewrite hashed names referenced from inside a Component's own patches.
+  # After editing nginx.conf run: kubectl -n llm rollout restart deploy/vllm
+  - name: edge-proxy-config
+    files:
+      - nginx.conf
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: Deployment
+      name: vllm
+    patch: |-
+      # vLLM: loopback only, its port is no longer the public "http" port.
+      - op: add
+        path: /spec/template/spec/containers/0/args
+        value: ["--host", "127.0.0.1"]
+      - op: replace
+        path: /spec/template/spec/containers/0/ports
+        value: [{name: upstream, containerPort: 8000}]
+      # Probes go through the proxy (kubelet cannot reach the pod's loopback).
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/httpGet/port
+        value: 8080
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/httpGet/port
+        value: 8080
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/httpGet/port
+        value: 8080
+  # Added with a strategic-merge patch so kustomize rewrites the hashed ConfigMap name in the volume.
+  - target:
+      kind: Deployment
+      name: vllm
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: vllm
+      spec:
+        template:
+          spec:
+            containers:
+              - name: edge-proxy
+                image: nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+                imagePullPolicy: IfNotPresent
+                ports:
+                  - {name: http, containerPort: 8080}
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop: ["ALL"]
+                # Fractional CPU: stays in the shared pool, does not take an exclusive core from vLLM.
+                resources:
+                  requests: {cpu: 250m, memory: 128Mi}
+                  limits: {cpu: 250m, memory: 128Mi}
+                volumeMounts:
+                  - {name: edge-proxy-config, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf, readOnly: true}
+                  - {name: edge-proxy-tmp, mountPath: /tmp}
+            volumes:
+              - name: edge-proxy-config
+                configMap:
+                  name: edge-proxy-config
+              - name: edge-proxy-tmp
+                emptyDir: {sizeLimit: 64Mi}

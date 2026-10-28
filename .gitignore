@@ -29,3 +29,4 @@ results/raw/
 # --- local smoke-test output (contains generated text) ---
 results/smoke/
 uv.lock
+results/k8s/

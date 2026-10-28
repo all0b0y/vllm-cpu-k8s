@@ -1,0 +1,7 @@
+# Same as mac-m3, but every egress except DNS is blocked (proof that restarts are offline).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../mac-m3
+components:
+  - ../../components/offline

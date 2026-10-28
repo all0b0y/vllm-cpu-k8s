@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  # RWO volume + exclusive CPUs: the old pod must be gone before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      serviceAccountName: vllm
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+
+      initContainers:
+        # Bonus 2: weights are fetched by a separate lightweight rootless image, not by the vLLM entrypoint.
+        # First start: download + verify into the PVC. Every next start: offline sha256 re-check only.
+        - name: model-fetch
+          image: model-loader:1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MODEL_ID
+              valueFrom: {configMapKeyRef: {name: vllm-env, key: MODEL_ID}}
+            - name: MODEL_REVISION
+              valueFrom: {configMapKeyRef: {name: vllm-env, key: MODEL_REVISION}}
+            - name: HF_TOKEN_PATH          # token as a FILE, only in this container
+              value: /var/run/secrets/hf/token
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: tmp, mountPath: /tmp}
+            - {name: hf-token, mountPath: /var/run/secrets/hf, readOnly: true}
+
+      containers:
+        - name: vllm
+          image: vllm-cpu-guard:0.31.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: vllm-env
+          env:
+            - name: VLLM_API_KEY             # env from the Secret, never a CLI flag (visible in ps/describe)
+              valueFrom:
+                secretKeyRef: {name: vllm-api-key, key: api-key}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Guaranteed QoS with an integer CPU count -> exclusive cores under the static CPU Manager.
+          resources:
+            requests: {cpu: "5", memory: 7Gi}
+            limits: {cpu: "5", memory: 7Gi}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 90            # model load + torch.compile can take minutes on CPU
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - {name: vllm-config, mountPath: /etc/vllm/config.yaml, subPath: config.yaml, readOnly: true}
+            - {name: models, mountPath: /models, readOnly: true}
+            # torch.compile cache on the PVC: a warm restart skips recompilation (needs exec, PVC allows it)
+            - {name: models, mountPath: /var/cache/vllm, subPath: .cache/vllm}
+            - {name: tmp, mountPath: /tmp}
+            - {name: dshm, mountPath: /dev/shm}
+
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: models
+        - name: vllm-config
+          configMap:
+            name: vllm-config
+        - name: hf-token
+          secret:
+            secretName: hf-token
+            defaultMode: 0400
+            items:
+              - {key: token, path: token}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi

@@ -19,6 +19,12 @@ CANARY = os.environ.get("CANARY", "CANARY-unset")
 MODEL = os.environ.get("MODEL_NAME", "qwen2.5-1.5b-instruct")
 EXPECT_GUARD = os.environ.get("EXPECT_GUARD", "1") == "1"
 AUTH = {"Authorization": f"Bearer {KEY}"}
+# Without a token every route must be refused: 401 by the guard middleware, 404 by the nginx allowlist.
+DENY = {int(x) for x in os.environ.get("DENY_STATUSES", "401").split(",")}
+# Routes found on stock vLLM 0.31.0 (plus whatever /openapi.json reports at runtime).
+KNOWN_ROUTES = ["/invocations", "/metrics", "/openapi.json", "/docs", "/load", "/version", "/ping", "/tokenize",
+                "/detokenize", "/kv_event_sources", "/scale_elastic_ep", "/is_scaling_elastic_ep",
+                "/generative_scoring", "/v1/models", "/v1/chat/completions", "/v1/completions", "/v1/responses"]
 failures = 0
 
 
@@ -58,25 +64,25 @@ def main() -> int:
     # Every route the server exposes, called WITHOUT a token.
     spec = requests.get(f"{BASE}/openapi.json", headers=AUTH, timeout=10)
     paths = sorted(spec.json()["paths"]) if spec.ok else []
-    paths += ["/metrics", "/openapi.json", "/docs"]
+    paths += KNOWN_ROUTES
     open_paths = []
     for p in sorted(set(paths)):
         if "{" in p:
             p = p.replace("{", "").replace("}", "")
         status = requests.get(f"{BASE}{p}", timeout=30).status_code
-        if status != 401 and p != "/health":
+        if status not in DENY and p != "/health":
             open_paths.append({"path": p, "status": status})
     report("no_token_everything_401", not open_paths if EXPECT_GUARD else True,
            routes_checked=len(set(paths)), open_without_token=open_paths)
 
     r = chat("Reply with one word: hello", auth=None, path="/invocations")
-    report("invocations_without_token", (r.status_code == 401) if EXPECT_GUARD else True,
+    report("invocations_without_token", (r.status_code in DENY) if EXPECT_GUARD else True,
            status=r.status_code, note="200 here = documented vLLM --api-key bypass")
     if not EXPECT_GUARD:
         return 0
 
     r = chat("Reply with one word: hello", auth=None)
-    report("chat_without_token", r.status_code == 401, status=r.status_code)
+    report("chat_without_token", r.status_code in DENY, status=r.status_code)
 
     r = chat("What is the capital of France? Answer in one word.")
     answer = r.json()["choices"][0]["message"]["content"] if r.ok else None
@@ -95,6 +101,8 @@ def main() -> int:
     report("canary_request", r.ok, status=r.status_code, request_id=r.headers.get("x-request-id"))
     with open(os.environ.get("ANSWER_FILE", "/tmp/canary_answer.txt"), "w", encoding="utf-8") as fh:
         fh.write(canary_answer)
+    if os.environ.get("PRINT_ANSWER") == "1":  # client-side output only (needed to grep server logs for it)
+        print(json.dumps({"canary_answer": canary_answer}, ensure_ascii=False), flush=True)
 
     # Streaming: time to the first chunk that actually carries generated text.
     started = time.perf_counter()
