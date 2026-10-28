@@ -1,8 +1,6 @@
 # --- secrets: never commit real values (templates are *.example) ---
 k8s/**/secrets/*
 !k8s/**/secrets/*.example
-secrets/
-!secrets/*.example
 *.env
 !*.env.example
 
