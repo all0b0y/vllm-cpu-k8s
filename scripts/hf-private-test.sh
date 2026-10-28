@@ -75,9 +75,12 @@ spec:
     - {name: tmp, emptyDir: {}}
     $vol
 EOF
-  kubectl -n $NS wait --for=jsonpath='{.status.phase}'=Succeeded "pod/hf-$name" --timeout=300s >/dev/null 2>&1 \
-    || kubectl -n $NS wait --for=jsonpath='{.status.phase}'=Failed "pod/hf-$name" --timeout=5s >/dev/null 2>&1 || true
-  local code log leak
+  local phase="" i code log leak
+  for ((i = 0; i < 150; i++)); do  # until the pod terminates either way (max ~5 min)
+    phase=$(kubectl -n $NS get pod "hf-$name" -o jsonpath='{.status.phase}')
+    [[ $phase == Succeeded || $phase == Failed ]] && break
+    sleep 2
+  done
   code=$(kubectl -n $NS get pod "hf-$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')
   log=$(kubectl -n $NS logs "hf-$name" 2>&1 | tail -2 | tr '\n' ' ')
   leak=$(kubectl -n $NS logs "hf-$name" 2>&1 | grep -c -F "$TOKEN" || true)
