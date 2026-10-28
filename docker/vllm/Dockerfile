@@ -5,13 +5,27 @@
 
 ARG UBUNTU_IMAGE=ubuntu:24.04@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0
+# Source of a CA bundle (pinned by digest) so apt can reach the HTTPS snapshot server before
+# ca-certificates is installed. Nothing else from this image ends up in the result.
+ARG CA_IMAGE=python:3.13-slim-trixie@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915fd88ded1d86bb
+# OS packages are frozen to this Ubuntu archive snapshot on amd64. snapshot.ubuntu.com does not serve
+# ubuntu-ports (arm64 -> HTTP 401), so on arm64 only the base-image digest is pinned (see README).
+ARG APT_SNAPSHOT=20261027T000000Z
 
 FROM ${UV_IMAGE} AS uv
+FROM ${CA_IMAGE} AS ca
 
 # ---------------------------------------------------------------------------- builder
 FROM ${UBUNTU_IMAGE} AS builder
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3.12 ca-certificates \
+ARG APT_SNAPSHOT
+# hadolint ignore=DL3008
+RUN --mount=type=bind,from=ca,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/ca.crt \
+    set -eu; \
+    if [ "$(dpkg --print-architecture)" = amd64 ] && [ -n "${APT_SNAPSHOT}" ]; then \
+      APT="apt-get -o Acquire::https::CaInfo=/tmp/ca.crt --snapshot ${APT_SNAPSHOT}"; \
+    else APT="apt-get"; fi; \
+    $APT update \
+ && $APT install -y --no-install-recommends python3.12 ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
@@ -30,9 +44,15 @@ FROM ${UBUNTU_IMAGE} AS runtime
 # libnuma1        : linked by vLLM CPU kernels
 # g++ / python-dev: torch.compile (inductor) builds C++ kernels at runtime on CPU
 # openssl         : inductor checksums precompiled headers with the openssl CLI
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-        python3.12 libtcmalloc-minimal4t64 libnuma1 g++ libpython3.12-dev openssl \
+ARG APT_SNAPSHOT
+# hadolint ignore=DL3008
+RUN --mount=type=bind,from=ca,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/ca.crt \
+    set -eu; \
+    if [ "$(dpkg --print-architecture)" = amd64 ] && [ -n "${APT_SNAPSHOT}" ]; then \
+      APT="apt-get -o Acquire::https::CaInfo=/tmp/ca.crt --snapshot ${APT_SNAPSHOT}"; \
+    else APT="apt-get"; fi; \
+    $APT update \
+ && $APT install -y --no-install-recommends python3.12 libtcmalloc-minimal4t64 libnuma1 g++ libpython3.12-dev openssl \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 app \
  && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /tmp/home --shell /usr/sbin/nologin app
