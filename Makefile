@@ -21,7 +21,7 @@ build:
 
 ## test: unit tests (guard middleware, log redaction, entrypoint policy, loader verification)
 test:
-	uv run --python 3.12 --with pytest --with anyio --with httpx --with pyyaml python -m pytest -q
+	uv run --python 3.12 --no-project --with pytest --with anyio --with httpx --with pyyaml python -m pytest -q
 
 ## smoke: plain-Docker validation of the guarded image (restricted flags, offline, auth, canary)
 smoke:
