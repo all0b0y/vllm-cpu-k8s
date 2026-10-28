@@ -8,12 +8,18 @@ resources:
 components:
   - ../../components/edge-proxy
 patches:
-  - target:
+  # Strategic merge by container NAME: the edge-proxy component inserts nginx as containers[0], so an index-based
+  # JSON patch (/containers/0) would resize nginx instead of vLLM.
+  - patch: |-
+      apiVersion: apps/v1
       kind: Deployment
-      name: vllm
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources
-        value:
-          requests: {cpu: "10", memory: 8Gi}
-          limits: {cpu: "10", memory: 8Gi}
+      metadata:
+        name: vllm
+      spec:
+        template:
+          spec:
+            containers:
+              - name: vllm
+                resources:
+                  requests: {cpu: "10", memory: 8Gi}
+                  limits: {cpu: "10", memory: 8Gi}

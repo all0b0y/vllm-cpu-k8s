@@ -253,9 +253,9 @@ def main() -> int:
     pod = vllm_pod()
     cfg_name = next(v["configMap"]["name"] for v in pod["spec"]["volumes"] if v["name"] == "vllm-config")
     meta["vllm_config"] = json.loads(kubectl("get", "cm", cfg_name, "-o", "json"))["data"]["config.yaml"]
-    meta["vllm_resources"] = pod["spec"]["containers"][0]["resources"]
-    meta["vllm_env"] = {e["name"]: e.get("value") for e in pod["spec"]["containers"][0].get("env", [])
-                        if "value" in e}
+    vc = next(c for c in pod["spec"]["containers"] if c["name"] == "vllm")
+    meta["vllm_resources"] = vc["resources"]
+    meta["vllm_env"] = {e["name"]: e.get("value") for e in vc.get("env", []) if "value" in e}
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
 
     phases = open(out / "phases.jsonl", "w")  # noqa: SIM115
