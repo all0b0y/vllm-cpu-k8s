@@ -32,3 +32,6 @@ secretGenerator:
   - name: hf-token
     files:
       - token=secrets/hf-token.txt
+    options:
+      labels:
+        app.kubernetes.io/component: hf-token
