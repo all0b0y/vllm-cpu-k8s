@@ -126,8 +126,32 @@ def ensure_client() -> None:
         kubectl("wait", "--for=condition=Ready", f"pod/{CLIENT}", "--timeout=180s")
 
 
+def vllm_pod() -> dict:
+    """The serving vLLM pod: Running, all containers ready, not being deleted (a Recreate rollout briefly has an
+    old Terminating pod and a new Pending one)."""
+    for pod in json.loads(kubectl("get", "pod", "-l", "app=vllm", "-o", "json"))["items"]:
+        sts = pod["status"].get("containerStatuses", [])
+        if (pod["status"].get("phase") == "Running" and "deletionTimestamp" not in pod["metadata"]
+                and sts and all(c.get("ready") for c in sts)):
+            return pod
+    raise RuntimeError("no ready vLLM pod")
+
+
+def wait_vllm_ready(timeout: str = "40m") -> None:
+    """Block until the deployment is rolled out; on failure print why (pending/scheduling/OOM) and stop."""
+    print("waiting for deploy/vllm to be ready...", flush=True)
+    r = subprocess.run(["kubectl", "-n", NS, "rollout", "status", "deploy/vllm", f"--timeout={timeout}"],
+                       text=True, capture_output=True, check=False)
+    if r.returncode != 0:
+        print(r.stdout + r.stderr)
+        for cmd in (["get", "pods", "-o", "wide"], ["describe", "pod", "-l", "app=vllm"]):
+            out = subprocess.run(["kubectl", "-n", NS, *cmd], text=True, capture_output=True, check=False).stdout
+            print("\n".join(out.splitlines()[-40:]))
+        sys.exit("vLLM pod is not ready -- see the pod status/events above")
+
+
 def cgroup_targets() -> list[str]:
-    pod = json.loads(kubectl("get", "pod", "-l", "app=vllm", "-o", "json"))["items"][0]
+    pod = vllm_pod()
     base = f"/sys/fs/cgroup/kubepods/pod{pod['metadata']['uid']}"  # Guaranteed QoS pod
     targets = [f"vllm_pod={base}"]
     for st in pod["status"]["containerStatuses"]:
@@ -220,12 +244,13 @@ def main() -> int:
     machine = os.environ.get("MACHINE", "mac-m3" if platform.system() == "Darwin" else "win-i5")
     run_id = time.strftime("%Y%m%d-%H%M%S") + f"-{machine}-{args.tier}"
     out = ROOT / "results" / "raw" / run_id
+    wait_vllm_ready()
     out.mkdir(parents=True)
     ensure_client()
     meta = {"run_id": run_id, "machine": machine, "tier": args.tier, "model": MODEL_NAME,
             "label": os.environ.get("LABEL", ""), "repeats": args.repeats, "started": now(),
             "host_platform": platform.platform()}
-    pod = json.loads(kubectl("get", "pod", "-l", "app=vllm", "-o", "json"))["items"][0]
+    pod = vllm_pod()
     cfg_name = next(v["configMap"]["name"] for v in pod["spec"]["volumes"] if v["name"] == "vllm-config")
     meta["vllm_config"] = json.loads(kubectl("get", "cm", cfg_name, "-o", "json"))["data"]["config.yaml"]
     meta["vllm_resources"] = pod["spec"]["containers"][0]["resources"]
