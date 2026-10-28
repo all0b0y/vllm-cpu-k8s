@@ -1,0 +1,31 @@
+# --- secrets: never commit real values (templates are *.example) ---
+k8s/**/secrets/*
+!k8s/**/secrets/*.example
+secrets/
+!secrets/*.example
+*.env
+!*.env.example
+
+# --- local working notes ---
+.dev/
+
+# --- task statements (not published) ---
+*.docx
+Task*/
+
+# --- python / tooling ---
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# --- benchmark raw data (published as a GitHub Release asset instead) ---
+results/raw/
+
+# --- OS ---
+.DS_Store
+
+# --- local smoke-test output (contains generated text) ---
+results/smoke/
+uv.lock

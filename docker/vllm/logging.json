@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "filters": {
+    "redact": { "()": "vllm_guard.logfilter.RedactionFilter" }
+  },
+  "formatters": {
+    "json": { "()": "vllm_guard.logfilter.JsonFormatter" }
+  },
+  "handlers": {
+    "stdout": {
+      "class": "logging.StreamHandler",
+      "stream": "ext://sys.stdout",
+      "formatter": "json",
+      "filters": ["redact"],
+      "level": "INFO"
+    }
+  },
+  "loggers": {
+    "vllm":           { "handlers": ["stdout"], "level": "INFO", "propagate": false },
+    "vllm_guard":     { "handlers": ["stdout"], "level": "INFO", "propagate": false },
+    "uvicorn":        { "handlers": ["stdout"], "level": "INFO", "propagate": false },
+    "uvicorn.error":  { "handlers": ["stdout"], "level": "INFO", "propagate": false },
+    "uvicorn.access": { "handlers": [], "level": "CRITICAL", "propagate": false }
+  },
+  "root": { "handlers": ["stdout"], "level": "WARNING" }
+}

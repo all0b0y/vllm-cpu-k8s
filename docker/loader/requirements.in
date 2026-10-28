@@ -1,0 +1,2 @@
+# Dependencies of the model loader (initContainer). Lock: docker/loader/requirements.txt (`make lock`).
+huggingface_hub==2.3.0

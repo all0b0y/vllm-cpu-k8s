@@ -1,0 +1,11 @@
+.git
+.dev
+.githooks
+results
+bench
+k8s
+tests
+**/__pycache__
+**/*.pyc
+*.docx
+secrets
